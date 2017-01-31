@@ -1,4 +1,4 @@
-namespace MediatR.Internal
+﻿namespace MediatR.Internal
 {
     using System;
     using System.Linq;
@@ -21,7 +21,7 @@ namespace MediatR.Internal
 
         protected static THandler GetHandler<THandler>(SingleInstanceFactory factory)
         {
-            return (THandler) GetHandler(typeof(THandler), factory);
+            return (THandler)GetHandler(typeof(THandler), factory);
         }
 
         protected static InvalidOperationException BuildException(object message)
@@ -47,6 +47,7 @@ namespace MediatR.Internal
     {
         private Func<TRequest, CancellationToken, SingleInstanceFactory, RequestHandlerDelegate<TResponse>> _handlerFactory;
         private object _syncLock = new object();
+        private bool _initialized;
 
         public override Task<TResponse> Handle(IRequest<TResponse> request, CancellationToken cancellationToken,
             SingleInstanceFactory singleFactory, MultiInstanceFactory multiFactory)
@@ -60,12 +61,10 @@ namespace MediatR.Internal
 
         private RequestHandlerDelegate<TResponse> GetHandler(TRequest request, CancellationToken cancellationToken, SingleInstanceFactory factory)
         {
-            var initialized = false;
-
-            LazyInitializer.EnsureInitialized(ref _handlerFactory, ref initialized, ref _syncLock,
+            LazyInitializer.EnsureInitialized(ref _handlerFactory, ref _initialized, ref _syncLock,
                 () => GetHandlerFactory(t => GetHandler(t, factory)));
 
-            if (!initialized || _handlerFactory == null)
+            if (!_initialized || _handlerFactory == null)
             {
                 throw BuildException(request);
             }
@@ -76,20 +75,20 @@ namespace MediatR.Internal
         private static Func<TRequest, CancellationToken, SingleInstanceFactory, RequestHandlerDelegate<TResponse>>
             GetHandlerFactory(SingleInstanceFactory factory)
         {
-            if (GetHandler<IRequestHandler<TRequest, TResponse>>(factory) != null)
-            {
-                return (request, token, fac) => () =>
-                {
-                    var handler = GetHandler<IRequestHandler<TRequest, TResponse>>(fac);
-                    return Task.FromResult(handler.Handle(request));
-                };
-            }
             if (GetHandler<IAsyncRequestHandler<TRequest, TResponse>>(factory) != null)
             {
                 return (request, token, fac) =>
                 {
                     var handler = GetHandler<IAsyncRequestHandler<TRequest, TResponse>>(fac);
                     return () => handler.Handle(request);
+                };
+            }
+            if (GetHandler<IRequestHandler<TRequest, TResponse>>(factory) != null)
+            {
+                return (request, token, fac) => () =>
+                {
+                    var handler = GetHandler<IRequestHandler<TRequest, TResponse>>(fac);
+                    return Task.FromResult(handler.Handle(request));
                 };
             }
             if (GetHandler<ICancellableAsyncRequestHandler<TRequest, TResponse>>(factory) != null)
